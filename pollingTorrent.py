@@ -3,6 +3,16 @@ import time
 from datetime import datetime
 import re
 import pyperclip
+import inquirer
+
+# 添加请求头
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'Origin': 'https://thepiratebay.org',
+    'Referer': 'https://thepiratebay.org/'
+}
 
 TRACKERS = [
     "udp://tracker.opentrackr.org:1337",
@@ -13,6 +23,12 @@ TRACKERS = [
     "udp://tracker.dler.org:6969/announce",
     "udp://exodus.desync.com:6969",
     "udp://open.demonii.com:1337/announce"
+]
+
+RESOLUTION_CHOICES = [
+    ("2160p (4K)", 1),
+    ("1080p (Full HD)", 2),
+    ("720p (HD)", 3)
 ]
 
 def match_pattern(text, pattern):
@@ -31,7 +47,7 @@ def match_pattern(text, pattern):
 def print_max_seeder_info(results, resolution, color="\033[0m"):
     reset = "\033[0m"
     """
-    打印指定分辨率中种子数最多的资源信息
+    打印指定分辨率中Seeders最多的资源信息
     
     Args:
         results: 资源列表
@@ -40,13 +56,13 @@ def print_max_seeder_info(results, resolution, color="\033[0m"):
     """
     if results:
         max_seeder_item = max(results, key=lambda x: int(x.get('seeders', 0)))
-        print(f"\n{color}{resolution}中种子数最多的资源:")
+        print(f"\n{color}{resolution}中Seeders最多的资源:")
         print(f"名称: {max_seeder_item.get('name')}")
         print(f"ID: {max_seeder_item.get('id')}")
         print(f"做种数: {max_seeder_item.get('seeders')}{reset}")
         return max_seeder_item.get('id')
     
-def generate_magnet_link(hash_value, display_name, trackers):
+def generate_magnet_link(hash_value, display_name, trackers):    
     # 基础磁力链接格式
     base = f"https://thepiratebay.org/magnet:?xt=urn:btih:{hash_value}"
     
@@ -65,8 +81,9 @@ def generate_magnet_link(hash_value, display_name, trackers):
 
 def download_torrent(id):
     url = f"https://apibay.org/t.php?id={id}"
+    description_url = f"https://thepiratebay.org/description.php?id={id}"
     try:
-        response = requests.get(url)
+        response = requests.get(url, headers=HEADERS)
         response.raise_for_status()
         
         # 解析响应数据
@@ -78,7 +95,10 @@ def download_torrent(id):
         
         if not info_hash or not name:
             raise ValueError("获取种子信息失败:缺少必要字段")
-            
+        
+        if info_hash == "0000000000000000000000000000000000000000":
+            raise ValueError(f"获取种子信息失败: info_hash=0000000000000000000000000000000000000000\n手动访问详情页: {description_url}")
+                        
         magnet_link = generate_magnet_link(info_hash, name, TRACKERS)
         # 复制磁力链接到剪贴板
         pyperclip.copy(magnet_link)
@@ -99,34 +119,42 @@ def filter_by_quality(results, quality):
     """
     return [r for r in results if match_pattern(r.get('name', ''), quality)]
 
-def process_quality_results(results, prefix_msg=""):
+def process_quality_results(results, prefix_msg="", max_resolution=1):
     """处理不同质量的资源结果
     
     Args:
         results: 资源列表
         prefix_msg: 信息前缀(用于显示季数和集数)
+        max_resolution: 要查询的最大分辨率(可选,可选值为1: 2160p, 2: 1080p, 3: 720p, 默认为1: 2160p)
     """
+    res_2160p = filter_by_quality(results, r'2160p')
     res_1080p = filter_by_quality(results, r'1080p')
     res_720p = filter_by_quality(results, r'720p')
     
-    if res_1080p:
+    if max_resolution < 2 and res_2160p:
+        print(f"\033[92m{prefix_msg}2160p内容共 {len(res_2160p)} 条\033[0m")
+        max_seeder_id = print_max_seeder_info(res_2160p, "2160p", "\033[92m")
+        if max_seeder_id:
+            download_torrent(max_seeder_id)
+    elif max_resolution < 3 and res_1080p:
         print(f"\033[92m{prefix_msg}1080p内容共 {len(res_1080p)} 条\033[0m")
         max_seeder_id = print_max_seeder_info(res_1080p, "1080p", "\033[92m")
         if max_seeder_id:
             download_torrent(max_seeder_id)
-    elif res_720p:
-        print(f"\033[94m{prefix_msg}720p内容共 {len(res_720p)} 条\033[0m")
-        max_seeder_id = print_max_seeder_info(res_720p, "720p", "\033[94m")
+    elif max_resolution < 4 and res_720p:
+        print(f"\033[92m{prefix_msg}720p内容共 {len(res_720p)} 条\033[0m")
+        max_seeder_id = print_max_seeder_info(res_720p, "720p", "\033[92m")
         if max_seeder_id:
             download_torrent(max_seeder_id)
 
-def process_episode_results(filtered_results, season, episodes):
+def process_episode_results(filtered_results, season, episodes, max_resolution=1):
     """处理按集筛选的结果
     
     Args:
         filtered_results: 按季筛选后的结果
         season: 季数
         episodes: 集数列表
+        max_resolution: 要查询的最大分辨率(可选,可选值为1: 2160p, 2: 1080p, 3: 720p, 默认为1: 2160p)
     """
     for ep in episodes:
         ep_pattern = f"E{str(ep).zfill(2)}|Episode {ep}"
@@ -134,17 +162,18 @@ def process_episode_results(filtered_results, season, episodes):
         
         if ep_results:
             print(f"\n第{season}季第{ep}集资源共 {len(ep_results)} 条")
-            process_quality_results(ep_results, f"第{season}季第{ep}集")
+            process_quality_results(ep_results, f"第{season}季第{ep}集", max_resolution)
         else:
             print(f"\033[93m未找到第{season}季第{ep}集的资源\033[0m")
 
-def poll_pirate_bay(query_name, season=None, episodes=None):
+def poll_pirate_bay(query_name, season=None, episodes=None, max_resolution=1):
     """查询并下载指定电影/剧集的种子
     
     Args:
         query_name: 要查询的电影/剧集名称
         season: 要查询的季数(如果要筛选集数则必传)
         episodes: 要查询的集数列表(可选,但必须配合season使用)
+        max_resolution: 要查询的最大分辨率(可选,可选值为1: 2160p, 2: 1080p, 3: 720p, 默认为1: 2160p)
     """
     if episodes and season is None:
         print("\033[91m错误: 筛选集数时必须指定季数\033[0m")
@@ -153,7 +182,7 @@ def poll_pirate_bay(query_name, season=None, episodes=None):
     url = f"https://apibay.org/q.php?q={query_name}&cat=200"
     
     try:
-        response = requests.get(url)
+        response = requests.get(url, headers=HEADERS)
         response.raise_for_status()
         
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -178,12 +207,12 @@ def poll_pirate_bay(query_name, season=None, episodes=None):
                 
             # 处理按集筛选或整季资源
             if episodes:
-                process_episode_results(filtered_results, season, episodes)
+                process_episode_results(filtered_results, season, episodes, max_resolution)
             else:
-                process_quality_results(filtered_results, f"第{season}季")
+                process_quality_results(filtered_results, f"第{season}季", max_resolution)
         else:
             # 不按季筛选，直接处理所有资源
-            process_quality_results(results)
+            process_quality_results(results, max_resolution=max_resolution)
                     
     except requests.RequestException as e:
         print(f"\033[91m请求出错: {e}\033[0m")
@@ -195,6 +224,16 @@ def main():
     # 获取用户输入
     query_name = input("请输入要搜索的电影/剧集名称: ")
     
+    questions = [
+        inquirer.List('max_resolution',
+                     message="请选择要搜索的最大分辨率",
+                     choices=RESOLUTION_CHOICES,
+                     default=RESOLUTION_CHOICES[0])
+    ]
+    
+    answers = inquirer.prompt(questions)
+    max_resolution = answers['max_resolution']
+    
     season_input = input("请输入要搜索的季数(直接回车跳过): ")
     season = int(season_input) if season_input.strip() else None
     
@@ -205,7 +244,7 @@ def main():
             episodes = [int(e.strip()) for e in episodes_input.split(",")]
     
     while True:
-        poll_pirate_bay(query_name, season, episodes)
+        poll_pirate_bay(query_name, season, episodes, max_resolution)
         time.sleep(60)  # 等待60秒后再次查询
 
 if __name__ == "__main__":
