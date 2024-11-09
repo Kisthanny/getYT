@@ -192,8 +192,20 @@ def main():
     print("开始轮询 The Pirate Bay API...")
     print("按 Ctrl+C 停止程序")
     
+    # 获取用户输入
+    query_name = input("请输入要搜索的电影/剧集名称: ")
+    
+    season_input = input("请输入要搜索的季数(直接回车跳过): ")
+    season = int(season_input) if season_input.strip() else None
+    
+    episodes = None
+    if season is not None:
+        episodes_input = input("请输入要搜索的集数(多集用逗号分隔,直接回车搜索整季): ")
+        if episodes_input.strip():
+            episodes = [int(e.strip()) for e in episodes_input.split(",")]
+    
     while True:
-        poll_pirate_bay('arcane', 2, [1, 2, 3])
+        poll_pirate_bay(query_name, season, episodes)
         time.sleep(60)  # 等待60秒后再次查询
 
 if __name__ == "__main__":
