@@ -109,6 +109,8 @@ def download_torrent(id):
         print(f"\033[91m获取磁力链接失败: {e}\033[0m")
     except ValueError as e:
         print(f"\033[91m{e}\033[0m")
+    except Exception as e:
+        print(f"\033[91m发生未知错误: {e}\033[0m")
 
 def filter_by_quality(results, quality):
     """筛选指定质量的资源
@@ -216,6 +218,8 @@ def poll_pirate_bay(query_name, season=None, episodes=None, max_resolution=1):
                     
     except requests.RequestException as e:
         print(f"\033[91m请求出错: {e}\033[0m")
+    except Exception as e:
+        print(f"\033[91m发生未知错误: {e}\033[0m")
 
 def main():
     print("开始轮询 The Pirate Bay API...")
