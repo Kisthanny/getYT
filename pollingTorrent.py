@@ -121,7 +121,36 @@ def filter_by_quality(results, quality):
     """
     return [r for r in results if match_pattern(r.get('name', ''), quality)]
 
-def process_quality_results(results, prefix_msg="", max_resolution=1):
+def show_resource_selection(resources, quality, prefix_msg):
+    if not resources:
+        return None
+        
+    print(f"\033[92m{prefix_msg}{quality}内容共 {len(resources)} 条\033[0m")
+    
+    while True:
+        # 创建选择列表，在开头添加退出选项
+        choices = [("退出选择", "exit")] + [
+            (f"{r.get('name')} (做种数: {r.get('seeders')})", r.get('id')) 
+            for r in resources
+        ]
+        
+        questions = [
+            inquirer.List('resource_id',
+                         message=f"请选择要下载的{quality}资源",
+                         choices=choices)
+        ]
+        
+        answers = inquirer.prompt(questions)
+        choosen_seed_id = answers['resource_id'] if answers else None
+        
+        if not choosen_seed_id or choosen_seed_id == "exit":
+            print("\033[93m退出选择\033[0m")
+            break
+            
+        download_torrent(choosen_seed_id)
+        # 下载完成后继续显示列表，让用户可以选择其他资源
+
+def process_quality_results(results, prefix_msg="", max_resolution=1, list_choice=True):
     """处理不同质量的资源结果
     
     Args:
@@ -133,21 +162,29 @@ def process_quality_results(results, prefix_msg="", max_resolution=1):
     res_1080p = filter_by_quality(results, r'1080p')
     res_720p = filter_by_quality(results, r'720p')
     
-    if max_resolution < 2 and res_2160p:
-        print(f"\033[92m{prefix_msg}2160p内容共 {len(res_2160p)} 条\033[0m")
-        max_seeder_id = print_max_seeder_info(res_2160p, "2160p", "\033[92m")
-        if max_seeder_id:
-            download_torrent(max_seeder_id)
-    elif max_resolution < 3 and res_1080p:
-        print(f"\033[92m{prefix_msg}1080p内容共 {len(res_1080p)} 条\033[0m")
-        max_seeder_id = print_max_seeder_info(res_1080p, "1080p", "\033[92m")
-        if max_seeder_id:
-            download_torrent(max_seeder_id)
-    elif max_resolution < 4 and res_720p:
-        print(f"\033[92m{prefix_msg}720p内容共 {len(res_720p)} 条\033[0m")
-        max_seeder_id = print_max_seeder_info(res_720p, "720p", "\033[92m")
-        if max_seeder_id:
-            download_torrent(max_seeder_id)
+    if list_choice:
+        if max_resolution < 2 and res_2160p:
+            show_resource_selection(res_2160p, "2160p", prefix_msg)
+        elif max_resolution < 3 and res_1080p:
+            show_resource_selection(res_1080p, "1080p", prefix_msg)
+        elif max_resolution < 4 and res_720p:
+            show_resource_selection(res_720p, "720p", prefix_msg)
+    else:
+        if max_resolution < 2 and res_2160p:
+            print(f"\033[92m{prefix_msg}2160p内容共 {len(res_2160p)} 条\033[0m")
+            max_seeder_id = print_max_seeder_info(res_2160p, "2160p", "\033[92m")
+            if max_seeder_id:
+                download_torrent(max_seeder_id)
+        elif max_resolution < 3 and res_1080p:
+            print(f"\033[92m{prefix_msg}1080p内容共 {len(res_1080p)} 条\033[0m")
+            max_seeder_id = print_max_seeder_info(res_1080p, "1080p", "\033[92m")
+            if max_seeder_id:
+                download_torrent(max_seeder_id)
+        elif max_resolution < 4 and res_720p:
+            print(f"\033[92m{prefix_msg}720p内容共 {len(res_720p)} 条\033[0m")
+            max_seeder_id = print_max_seeder_info(res_720p, "720p", "\033[92m")
+            if max_seeder_id:
+                download_torrent(max_seeder_id)
 
 def process_episode_results(filtered_results, season, episodes, max_resolution=1):
     """处理按集筛选的结果
@@ -164,7 +201,7 @@ def process_episode_results(filtered_results, season, episodes, max_resolution=1
         
         if ep_results:
             print(f"\n第{season}季第{ep}集资源共 {len(ep_results)} 条")
-            process_quality_results(ep_results, f"第{season}季第{ep}集", max_resolution)
+            process_quality_results(ep_results, f"第{season}季第{ep}集", max_resolution, list_choice=False)
         else:
             print(f"\033[93m未找到第{season}季第{ep}集的资源\033[0m")
 
@@ -222,7 +259,7 @@ def poll_pirate_bay(query_name, season=None, episodes=None, max_resolution=1):
         print(f"\033[91m发生未知错误: {e}\033[0m")
 
 def main():
-    print("开始轮询 The Pirate Bay API...")
+    print("开始调用 The Pirate Bay API...")
     print("按 Ctrl+C 停止程序")
     
     # 获取用户输入
@@ -238,18 +275,39 @@ def main():
     answers = inquirer.prompt(questions)
     max_resolution = answers['max_resolution']
     
-    season_input = input("请输入要搜索的季数(直接回车跳过): ")
-    season = int(season_input) if season_input.strip() else None
+    # 季数输入验证
+    while True:
+        season_input = input("请输入要搜索的季数(直接回车跳过): ")
+        if not season_input.strip():
+            season = None
+            break
+        try:
+            season = int(season_input)
+            break
+        except ValueError:
+            print("\033[91m错误：请输入单个数字，例如：1\033[0m")
     
     episodes = None
     if season is not None:
-        episodes_input = input("请输入要搜索的集数(多集用逗号分隔,直接回车搜索整季): ")
-        if episodes_input.strip():
-            episodes = [int(e.strip()) for e in episodes_input.split(",")]
+        while True:
+            episodes_input = input("请输入要搜索的集数(多集用逗号分隔,直接回车搜索整季): ")
+            if not episodes_input.strip():
+                break
+            try:
+                episodes = [int(e.strip()) for e in episodes_input.split(",")]
+                break
+            except ValueError:
+                print("\033[91m错误：请输入正确的集数格式，例如：1,2,3\033[0m")
     
-    while True:
+    if episodes:
+        print("\033[92m开始轮询（每60秒查询一次）\033[0m")
+        # 指定集数时，进入轮询
+        while True:
+            poll_pirate_bay(query_name, season, episodes, max_resolution)
+            time.sleep(60)  # 等待60秒后再次查询
+    else:
+        # 不指定集数时，直接查询
         poll_pirate_bay(query_name, season, episodes, max_resolution)
-        time.sleep(60)  # 等待60秒后再次查询
 
 if __name__ == "__main__":
     main()
