@@ -11,9 +11,14 @@ def create_venv(venv_path):
 
 def is_unix_shell():
     """判断是否为类Unix shell环境"""
-    shell = os.environ.get('SHELL', '')
-    term = os.environ.get('TERM', '')
-    return 'bash' in shell.lower() or 'git' in term.lower() or 'unix' in term.lower()
+    shell = os.environ.get('SHELL', '').lower()
+    term = os.environ.get('TERM', '').lower()
+    # 添加对 zsh 的判断，并检查是否是 Unix 类系统
+    return ('bash' in shell or 
+            'zsh' in shell or 
+            'git' in term or 
+            'unix' in term or 
+            sys.platform != "win32")
 
 def install_requirements(venv_path, requirements_file):
     """安装依赖项"""
@@ -33,21 +38,8 @@ def install_requirements(venv_path, requirements_file):
         subprocess.run([pip_path, "install", package])
 
 def get_path(*path_parts):
-    """
-    根据系统和shell环境生成适当的路径
-    
-    Args:
-        *path_parts: 路径部分的列表，如 ".", "venv", "Scripts", "activate"
-    
-    Returns:
-        str: 合适格式的路径字符串
-    """
-    if is_unix_shell():
-        # Unix-like shell（包括 Git Bash）使用正斜杠
-        return '/'.join(path_parts)
-    else:
-        # Windows CMD/PowerShell 使用反斜杠
-        return '\\'.join(path_parts)
+    """根据系统和shell环境生成适当的路径"""
+    return os.path.join(*path_parts)
 
 def main():
     # 设置虚拟环境路径
